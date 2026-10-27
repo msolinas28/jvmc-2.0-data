@@ -1,0 +1,11 @@
+jVMC_exp @ git+https://github.com/computational-quantum-science/jvmc-2.0.git@v1.5.8
+jax==0.11.2
+jaxlib==0.11.2
+flax==0.12.10
+netket==3.22.4
+
+numpy
+scipy
+optax
+h5py
+matplotlib
