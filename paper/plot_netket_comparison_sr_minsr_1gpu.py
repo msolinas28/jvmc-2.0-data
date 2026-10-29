@@ -45,8 +45,8 @@ def plot_step(ax_mem, ax_time, points, x, step):
 
 cfg.setup()
 
-fig, axes = plt.subplots(1, 4, figsize=(20, 4.8))
-ax_sr_mem, ax_sr_time, ax_minsr_mem, ax_minsr_time = axes
+fig, axes = plt.subplots(2, 2, figsize=(13, 9.5))
+(ax_sr_mem, ax_sr_time), (ax_minsr_mem, ax_minsr_time) = axes
 
 plot_step(ax_sr_mem, ax_sr_time, load_points(SR_DATA, "n_samples"), "n_samples", "sr_step")
 plot_step(ax_minsr_mem, ax_minsr_time, load_points(MINSR_DATA, "n_parameters"), "n_parameters", "minsr_step")
@@ -57,7 +57,7 @@ ax_sr_mem.axvline(batch_size, color=cfg.COLORS["guide"], ls="--")
 ax_sr_mem.annotate("batch size of the\nbatched Jacobian", (batch_size, 0.5), xycoords=("data", "axes fraction"),
                    xytext=(-4, 0), textcoords="offset points", rotation=90, ha="right", va="center", color=cfg.COLORS["guide"])
 
-for ax, letter, xlabel in zip(axes, "abcd", ["Number of samples"] * 2 + ["Number of parameters"] * 2):
+for ax, letter, xlabel in zip(axes.flat, "abcd", ["Number of samples"] * 2 + ["Number of parameters"] * 2):
     ax.set_title(f"({letter})", loc="left")
     ax.set_xscale("log", base=2)
     ax.set_xticks(2.0 ** np.arange(10, 21, 2))
@@ -67,9 +67,9 @@ for ax, letter, xlabel in zip(axes, "abcd", ["Number of samples"] * 2 + ["Number
 
 # One entry per series over the four panels
 legend = {}
-for ax in axes:
+for ax in axes.flat:
     for handle, label in zip(*ax.get_legend_handles_labels()):
         legend.setdefault(label, handle)
 fig.legend(legend.values(), legend.keys(), loc="upper center", ncol=len(legend), frameon=False)
-fig.tight_layout(rect=(0, 0, 1, 0.91))
+fig.tight_layout(rect=(0, 0, 1, 0.95))
 cfg.save(fig, "netket_comparison_sr_minsr_1gpu")
