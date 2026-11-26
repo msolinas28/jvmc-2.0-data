@@ -1,7 +1,8 @@
 """Mixed-precision VMC benchmark on the RTX 5090 and A100.
 
-Reproduce the accepted notebook figure, using the same archive, panel sizes,
-colors, patterns, mirrored axes and GPU row headings. Run from any directory;
+Three panels show mirrored RTX 5090 time/batch bars, 10,000-step accuracy
+estimated from 10 million samples, and a full-width process breakdown.
+Precision sets the hue; process stage sets color intensity. Run from any directory;
 the default input is Data/precision_benchmark.h5 and output is
 Figures/mixed_precision_benchmark.pdf. No Jupyter or GPU runtime is required.
 """
@@ -15,11 +16,13 @@ import numpy as np
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from matplotlib.text import Text
-from matplotlib.ticker import NullLocator
+from matplotlib.ticker import FuncFormatter, MaxNLocator, NullLocator
+from matplotlib.colors import to_rgb
 
 import plot_config as cfg
 
 DATA_FILE = cfg.DATA_DIR / "precision_benchmark.h5"
+ESTIMATE_GROUP = "alex_10000_10m"
 PRECISION_COLORS = {
     "FP64 / FP64": "#4477AA",
     "FP32 / FP64": "#44AA99",
@@ -29,7 +32,10 @@ PRECISION_COLORS = {
 }
 SYMMETRY_HATCHES = ["", "///", "..."]
 SHORT_VARIANTS = ["Identity", r"$D_4$", r"$D_4+T$"]
-PROCESS_COLORS = ["#5D6874", "#8D9BA8", "#BBC5CE", "#E0E4E8"]
+# Fraction of the precision color retained in each process stage.
+# The grayscale legend uses the same mixture with black as its base color.
+PROCESS_INTENSITIES = np.array([1.0, .72, .44, .16])
+PROCESS_COLORS = [str(1.0-strength) for strength in PROCESS_INTENSITIES]
 PROCESS_LABELS = ["Sampling", "Objective", "Solve", "Other"]
 COMPONENT_LABELS = [
     "MCMC sampling", "Objective / local energies", "Neural tangent kernel + RHS",
@@ -52,7 +58,9 @@ def load_data(path=DATA_FILE):
         if not source.attrs["complete"] or source.attrs["completed_local_variants"] != 15:
             raise ValueError("Precision benchmark archive is incomplete")
         methods = json.loads(source["metadata/methods_json"][:].tobytes())
-        precision, rtx, alex = (arrays(source[name]) for name in ("precision", "rtx5090", "alex"))
+        if ESTIMATE_GROUP not in source or not source[ESTIMATE_GROUP].attrs["complete"]:
+            raise ValueError(f"Archive needs complete /{ESTIMATE_GROUP} estimates")
+        precision, rtx, alex = (arrays(source[name]) for name in ("precision", "rtx5090", ESTIMATE_GROUP))
     assert rtx["native_hot_seconds"].shape == (5, 3, 3)
     np.testing.assert_allclose(rtx["native_median_seconds"],
                                np.median(rtx["native_hot_seconds"], axis=-1), rtol=1e-11)
@@ -60,14 +68,22 @@ def load_data(path=DATA_FILE):
                                rtx["exclusive_hot_seconds"].mean(axis=2), rtol=1e-12)
     np.testing.assert_allclose(rtx["exclusive_hot_seconds"].sum(axis=-1),
                                rtx["wall_seconds"][:, :, 1:], rtol=1e-12)
-    np.testing.assert_allclose(alex["variance_mcse"],
-                               alex["bootstrap_variance"].std(axis=1, ddof=1), rtol=1e-12)
     reference = methods["ed_reference_energy"]
     np.testing.assert_allclose(alex["relative_error"],
                                (alex["energy"]-reference)/abs(reference), rtol=1e-12)
     assert np.all(rtx["exclusive_hot_seconds"] >= 0)
-    assert np.all(alex["validation_samples"] == 1_000_000)
-    assert np.all(alex["updates"] == 5000) and np.all(alex["validation_passed"])
+    assert np.all(alex["validation_samples"] == 10_000_000)
+    assert np.all(alex["updates"] == 10000) and np.all(alex["validation_passed"])
+    np.testing.assert_allclose(alex["relative_error_mcse"], alex["energy_mcse"]/abs(reference), rtol=1e-12)
+    assert np.all(alex["variance_mcse"] > 0)
+    for i, record in enumerate(alex["endpoint_evidence_json"]):
+        evidence = json.loads(record)
+        result = evidence["result"]
+        assert evidence["configuration"]["training_checkpoint_step"] == 10000
+        assert result["samples"] == 10_000_000 and result["passed"]
+        for name, field in [("energy", "mean"), ("energy_mcse", "mcse"),
+                            ("variance", "variance"), ("variance_mcse", "variance_mcse")]:
+            np.testing.assert_allclose(alex[name][i], result[field], rtol=1e-12)
     return precision, rtx, alex
 
 
@@ -158,39 +174,38 @@ def runtime_and_batches(time_axis, batch_axis, rtx, colors, pair_labels):
     batch_axis.axhline(batch_floor, color='black', linewidth=.8, zorder=5, clip_on=False)
 
 
-def process_times(axis, rtx, pair_labels):
-    # Match the familiar grouped stacked-bar layout: one group per symmetry,
-    # five precision pairs per group. Keep the four exclusive solve timers
-    # together; their full breakdown remains in the numerical tables below.
+def process_times(axis, rtx, colors, pair_labels):
+    # Five precision blocks, each with identity, D4 and D4+T bars.
+    # Exclusive solve components remain grouped without dropping any time.
     means = rtx['exclusive_mean_seconds']
     grouped = np.stack([means[..., 0], means[..., 1], means[..., 2:6].sum(axis=-1),
                         means[..., 6]], axis=-1)
     np.testing.assert_allclose(grouped.sum(axis=-1), means.sum(axis=-1), rtol=1e-14)
     fractions = grouped / grouped.sum(axis=-1, keepdims=True)
     np.testing.assert_allclose(fractions.sum(axis=-1), 1, atol=1e-14)
-    positions = np.concatenate([np.arange(5)+6*j for j in range(3)])
-    values = fractions.transpose(1, 0, 2).reshape(15, 4)
+    positions = (4*np.arange(5)[:, None] + np.arange(3)).ravel()
+    values = fractions.reshape(15, 4)
+    base_colors = np.repeat(np.array([to_rgb(color) for color in colors]), 3, axis=0)
     bottom = np.zeros(15)
-    for k, color in enumerate(PROCESS_COLORS):
-        axis.bar(positions, 100*values[:, k], bottom=bottom, width=.8,
-                 color=color, edgecolor='white', linewidth=.3, zorder=3)
+    for k, strength in enumerate(PROCESS_INTENSITIES):
+        # Adding white varies intensity while preserving each precision hue.
+        facecolors = 1.0-strength*(1.0-base_colors)
+        axis.bar(positions, 100*values[:, k], bottom=bottom, width=.76,
+                 color=facecolors, edgecolor='white', linewidth=.35, zorder=3)
         bottom += 100*values[:, k]
-    # Repeat panel a's symmetry encoding over each complete stack, keeping
-    # the process colors and white component boundaries visible underneath.
+    np.testing.assert_allclose(bottom, 100, atol=1e-12)
     for j, hatch in enumerate(SYMMETRY_HATCHES):
         if hatch:
-            axis.bar(np.arange(5)+6*j, np.full(5, 100), width=.8,
+            axis.bar(4*np.arange(5)+j, np.full(5, 100), width=.76,
                      facecolor='none', edgecolor='#38424C', linewidth=.25,
                      hatch=hatch, zorder=4)
-    axis.set_xlim(-.7, 16.7)
+    axis.set_xlim(-.7, 18.7)
     axis.set_ylim(0, 100)
-    axis.set_yticks([0, 50, 100])
+    axis.set_yticks([0, 25, 50, 75, 100])
     axis.set_ylabel(r'Step wall time [\%]')
-    axis.set_xticks(positions, pair_labels*3, rotation=90)
-    axis.tick_params(axis='x', length=0, pad=4)
-    for j, variant in enumerate(SHORT_VARIANTS):
-        axis.text(2+6*j, -.23, variant, transform=axis.get_xaxis_transform(),
-                  ha='center', va='top')
+    axis.set_xticks(4*np.arange(5)+1, pair_labels)
+    axis.tick_params(axis='x', length=0, pad=5)
+    axis.set_xlabel('Precision (network / VMC)')
     grid(axis)
 
 
@@ -202,28 +217,20 @@ def variance_error(axis, alex, colors, markers):
             elinewidth=.8, capsize=2, linestyle='none')
     axis.set_xscale('log')
     axis.set_yscale('log')
-    axis.set_xlim(8e-4, 1.2e-3)
-    axis.set_ylim(.07, .15)
-    axis.set_xticks([.0008, .001, .0012], ['0.0008', '0.0010', '0.0012'])
-    axis.set_yticks([.08, .10, .14], ['0.08', '0.10', '0.14'])
-    axis.xaxis.set_minor_locator(NullLocator())
-    axis.yaxis.set_minor_locator(NullLocator())
+    # Include the full error bars of the selected cohort, with space around them.
+    for values, errors, setter in [(alex['relative_error'], alex['relative_error_mcse'], axis.set_xlim),
+                                    (alex['variance'], alex['variance_mcse'], axis.set_ylim)]:
+        low, high = (values-errors).min(), (values+errors).max()
+        assert low > 0
+        pad = .18*(high-low)
+        setter(max(low-pad, low*.8), high+pad)
+    for coordinate, nbins in [(axis.xaxis, 4), (axis.yaxis, 5)]:
+        coordinate.set_major_locator(MaxNLocator(nbins=nbins, steps=[1, 2, 2.5, 5, 10]))
+        coordinate.set_major_formatter(FuncFormatter(lambda value, _: f'{value:g}'))
+        coordinate.set_minor_locator(NullLocator())
     axis.set_xlabel('Relative energy error\n' + r'$(E-E_0)/|E_0|$')
     axis.set_ylabel(r'Energy variance $\sigma_H^2/J_1^2$')
     grid(axis, 'both')
-
-
-def ground_state_runtime(axis, alex, colors, pair_labels):
-    hours = alex['runtime_seconds']/3600
-    axis.barh(np.arange(5), hours, color=colors, height=.60)
-    axis.set_yticks(np.arange(5), pair_labels)
-    axis.set_ylim(4.65, -.65)
-    axis.set_xlim(0, hours.max()*1.27)
-    axis.set_xticks([0, 4, 8, 12, 16])
-    axis.set_xlabel('Total job runtime [h]')
-    for y, value in enumerate(hours):
-        axis.text(value+.2, y, f'{value:.2f}', va='center')
-    grid(axis, 'x')
 
 
 def make_figure(precision, rtx, alex):
@@ -234,42 +241,33 @@ def make_figure(precision, rtx, alex):
     pair_labels = [label.replace("FP", "").replace(" / ", "/") for label in labels]
     colors = [PRECISION_COLORS[label] for label in labels]
     markers = precision["marker"].tolist()
-    FIGURE_HEIGHT_MM = 170
-    fig = plt.figure(figsize=cfg.figure_size(height_mm=FIGURE_HEIGHT_MM))
+    height_mm = 166
+    fig = plt.figure(figsize=cfg.figure_size(height_mm=height_mm))
 
-    # Keep panel sizes in physical units while reserving space for row headings.
-    def panel_rect(left, bottom_mm, width, height_mm):
-        return [left, bottom_mm/FIGURE_HEIGHT_MM, width, height_mm/FIGURE_HEIGHT_MM]
+    def panel_rect(left, bottom_mm, width, panel_height_mm):
+        return [left, bottom_mm/height_mm, width, panel_height_mm/height_mm]
 
-    axes = np.array([[fig.add_axes(panel_rect(.10, 124, .35, 25)),
-                      fig.add_axes(panel_rect(.61, 105, .35, 44))],
-                     [fig.add_axes(panel_rect(.10, 22.5, .35, 44)),
-                      fig.add_axes(panel_rect(.61, 22.5, .35, 44))]])
-    a, b, c, d = axes.flat
-    a_batch = fig.add_axes(panel_rect(.10, 105, .35, 19), sharex=a)
+    a = fig.add_axes(panel_rect(.10, 122, .35, 26))
+    a_batch = fig.add_axes(panel_rect(.10, 103, .35, 19), sharex=a)
+    b = fig.add_axes(panel_rect(.61, 103, .35, 45))
+    c = fig.add_axes(panel_rect(.10, 22, .86, 43))
     runtime_and_batches(a, a_batch, rtx, colors, pair_labels)
-    process_times(b, rtx, pair_labels)
-    variance_error(c, alex, colors, markers)
-    ground_state_runtime(d, alex, colors, pair_labels)
-    for axis, title in zip(axes.flat, ('a) Time and batch size', 'b) Process fractions',
-                                      'c) Ground-state accuracy', 'd) Search runtime')):
+    variance_error(b, alex, colors, markers)
+    process_times(c, rtx, colors, pair_labels)
+    for axis, title in [(a, 'a) Time and batch size'), (b, 'b) Ground-state accuracy'),
+                         (c, 'c) Process fractions')]:
         axis.set_title(title, loc='left', pad=8)
     fig.legend([Patch(facecolor='#E4E7EA', edgecolor='#38424C', hatch=hatch, linewidth=.25)
                 for hatch in SYMMETRY_HATCHES], SHORT_VARIANTS,
-               loc='upper left', bbox_to_anchor=(.09, 160/FIGURE_HEIGHT_MM), ncol=3, frameon=False,
+               loc='upper left', bbox_to_anchor=(.09, 163/height_mm), ncol=3, frameon=False,
                borderpad=0, handlelength=1, handletextpad=.4, columnspacing=.9)
-    # Keep each legend close to the measurements it describes. Model specifications
-    # and full batch choices remain in the accompanying caption and tables.
-    fig.legend([Patch(facecolor=color) for color in PROCESS_COLORS], PROCESS_LABELS,
-               loc='upper center', bbox_to_anchor=(.5, 89/FIGURE_HEIGHT_MM), ncol=4, frameon=False,
-               borderpad=0, handlelength=1, handletextpad=.5, columnspacing=1.2, labelspacing=.4)
-    fig.legend([Line2D([], [], marker=marker, color=color, linestyle='none') for color, marker in zip(colors, markers)],
-               pair_labels, loc='lower center', bbox_to_anchor=(.5, 1.55/FIGURE_HEIGHT_MM), ncol=5, frameon=False,
+    fig.legend([Line2D([], [], marker=marker, color=color, linestyle='none')
+                for color, marker in zip(colors, markers)], pair_labels,
+               loc='upper center', bbox_to_anchor=(.53, 84/height_mm), ncol=5, frameon=False,
                borderpad=0, handletextpad=.4, columnspacing=1)
-    fig.text(.53, 167/FIGURE_HEIGHT_MM, 'GPU: Nvidia RTX 5090',
-             ha='center', va='top', fontweight='bold')
-    fig.text(.53, 78.5/FIGURE_HEIGHT_MM, 'GPU: Nvidia A100',
-             ha='center', va='center', fontweight='bold')
+    fig.legend([Patch(facecolor=color) for color in PROCESS_COLORS], PROCESS_LABELS,
+               loc='lower center', bbox_to_anchor=(.53, 2/height_mm), ncol=4, frameon=False,
+               borderpad=0, handlelength=1, handletextpad=.5, columnspacing=1.2)
     return fig
 
 

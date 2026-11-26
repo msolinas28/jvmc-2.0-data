@@ -1,0 +1,3 @@
+# Local analysis notebook and Jupyter checkpoints
+/summary/precision_benchmark.ipynb
+.ipynb_checkpoints/
