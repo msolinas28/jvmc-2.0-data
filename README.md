@@ -18,9 +18,7 @@ The libraries and versions are in `requirements.txt` (`pip install -r requiremen
 | Script | Data | Figures |
 |---|---|---|
 | `compare_netket.py` | `compare_netket/` | `netket_comparison.pdf` |
-| `compare_netket_sr.py` | `compare_netket_sr/`, `compare_netket_sr_4gpus/` | `netket_comparison_sr_*.pdf` |
-| `compare_netket_minsr.py` | `compare_netket_minsr/`, `compare_netket_minsr_4gpus/` | `netket_comparison_minsr_*.pdf` |
-| `compare_netket_sr.py` + `compare_netket_minsr.py` | both of the above | `netket_comparison_sr_minsr_*.pdf` |
+| `compare_netket_sr.py` + `compare_netket_minsr.py` | `compare_netket_sr/`, `compare_netket_minsr/` | `netket_comparison_sr_minsr_1gpu.pdf` |
 | `quantum_dot_2d.py` | `quantum_dot_2d.h5` | `quantum_dot_2d.pdf` |
 | `plot_mixed_precision_benchmark.py` | `precision_benchmark.h5` | `mixed_precision_benchmark.pdf` |
 | `batch_size_and_mc_chains_scan.py` | `batch_size_scan/` | `batch_size_scan.pdf` |
@@ -30,14 +28,14 @@ The libraries and versions are in `requirements.txt` (`pip install -r requiremen
 
 - **compare_netket**: time of sampling and of the estimate of ⟨H⟩, jVMC_exp vs NetKet.
 - **compare_netket_sr**: time and peak memory of one SR step for a growing number of samples.
-- **compare_netket_minsr**: time and peak memory of one MinSR step for a growing number of parameters.
+- **compare_netket_minsr**: time and peak memory of one MinSR step for a growing number of parameters. The figure shows the SR step in the left column and the MinSR step in the right column; it leaves out the NetKet series with the NTK built on the fly (`netket-onthefly_*`), which stays in the data.
 - **quantum_dot_2d**: VMC ground state of 6 electrons in a 2D harmonic trap, compared with FCI.
 - **batch_size_scan**: speedup of the stages of a TDVP step and peak memory for an increasing batch size (RWKV, 1 GPU).
 - **mc_chains_scan**: speedup of the sampling for an increasing number of Markov chains (CpxCNN, 1, 2 and 4 GPUs).
 - **jaxmg_scan**: time of a TDVP step with the SR equation solved on one device or distributed with jaxmg, for an increasing number of parameters (RNN, 16 GPUs).
 - **gpu_scaling**: speedup of a TDVP step with the number of GPUs, and time of its stages on 1 and 16 GPUs (RNN).
 
-The NetKet comparisons were run on NVIDIA GH200 GPUs (1 GPU, and 4 GPUs for the `_4gpus` folders)
+The NetKet comparisons were run on 1 NVIDIA GH200 GPU.
 The batch-size, Markov-chain, jaxmg and GPU scans were run on NVIDIA A100 80GB GPUs.
 
 ## Plot typography and physical size

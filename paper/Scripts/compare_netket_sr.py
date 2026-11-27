@@ -2,7 +2,8 @@
 One SR step of jVMC_exp and NetKet at fixed N_p with a growing number of samples: time and peak memory.
 
 Copy of tests/benchmark/netket_comparison/compare_netket_sr.py, with the helpers it imported from
-compare_netket.py included. The figures are made by paper/plot_netket_comparison_sr_*.py.
+compare_netket.py included. The figure, together with the MinSR results of compare_netket_minsr.py, is
+made by paper/plot_netket_comparison_sr_minsr_1gpu.py.
 
 Transverse-field Ising chain (PBC), real RBM, float64, the same parameters and uniformly random samples
 in both libraries. Series: jVMC_exp with the dense Jacobian, jVMC_exp with the Jacobian in batches of
@@ -10,13 +11,11 @@ in both libraries. Series: jVMC_exp with the dense Jacobian, jVMC_exp with the J
 out-of-memory point. Every point writes <series>_<n_samples>.json (times, peak memory, versions) and its
 update as update_<series>_<n_samples>.npy, which checks that both libraries give the same update.
 
-The results in Data/ were made on NVIDIA GH200 GPUs (jVMC_exp 1.5.8, jax 0.11.2, netket 3.22.4) through
-tests/benchmark/netket_comparison/send_job.sh, with 4 GPUs for the second run. Both runs used these
-library settings: J^T J summed in chunks (JVMC_MATMUL_CHUNK_BYTES, default 1 GiB), compiled batch loop
-(JVMC_BATCH_LOOP=compiled), batched Jacobian on.
+The results in Data/ were made on 1 NVIDIA GH200 GPU (jVMC_exp 1.5.8, jax 0.11.2, netket 3.22.4) through
+tests/benchmark/netket_comparison/send_job.sh, with these library settings: J^T J summed in chunks
+(JVMC_MATMUL_CHUNK_BYTES, default 1 GiB), compiled batch loop (JVMC_BATCH_LOOP=compiled), batched Jacobian on.
 
     python compare_netket_sr.py --out-dir ../Data/compare_netket_sr
-    python compare_netket_sr.py --all-devices --out-dir ../Data/compare_netket_sr_4gpus
 """
 import sys
 sys.path.append(sys.path[0] + "/../..")

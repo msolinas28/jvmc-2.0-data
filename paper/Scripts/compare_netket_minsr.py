@@ -4,7 +4,8 @@ time and peak memory.
 
 Copy of tests/benchmark/netket_comparison/compare_netket_minsr.py. The helpers it imported from
 compare_netket.py and compare_netket_sr.py come from the copy of compare_netket_sr.py in this folder. The
-figures are made by paper/plot_netket_comparison_minsr_*.py.
+figure, together with the SR results of compare_netket_sr.py, is made by
+paper/plot_netket_comparison_sr_minsr_1gpu.py; it shows every series except the NTK built on the fly.
 
 Transverse-field Ising chain (PBC), real RBM with a growing number of hidden units, float64, the same
 parameters and uniformly random samples in all series. Series: jVMC_exp with the dense Jacobian, jVMC_exp
@@ -13,13 +14,12 @@ with the NTK built on the fly in batches. Every point runs in its own process, a
 first out-of-memory point. Every point writes <series>_<num_hidden>.json (times, peak memory, versions)
 and its update as update_<series>_<num_hidden>.npy, which checks that all series give the same update.
 
-The results in Data/ were made on NVIDIA GH200 GPUs (jVMC_exp 1.5.8, jax 0.11.2, netket 3.22.4) through
-tests/benchmark/netket_comparison/send_job.sh, with 4 GPUs for the second run. Both runs used these
-library settings: tangent kernel summed in chunks of parameters (JVMC_MATMUL_CHUNK_BYTES, default 1 GiB),
-compiled batch loop (JVMC_BATCH_LOOP=compiled), batched Jacobian on.
+The results in Data/ were made on 1 NVIDIA GH200 GPU (jVMC_exp 1.5.8, jax 0.11.2, netket 3.22.4) through
+tests/benchmark/netket_comparison/send_job.sh, with these library settings: tangent kernel summed in
+chunks of parameters (JVMC_MATMUL_CHUNK_BYTES, default 1 GiB), compiled batch loop
+(JVMC_BATCH_LOOP=compiled), batched Jacobian on.
 
     python compare_netket_minsr.py --out-dir ../Data/compare_netket_minsr
-    python compare_netket_minsr.py --all-devices --out-dir ../Data/compare_netket_minsr_4gpus
 """
 import sys
 sys.path.append(sys.path[0] + "/../..")
